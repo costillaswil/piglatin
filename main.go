@@ -18,7 +18,7 @@ func init() {
 		viper.SetConfigFile(configFile)
 	} else {
 		viper.SetConfigName("config")
-		viper.AddConfigPath("./cmd")
+		viper.AddConfigPath(".")
 		viper.AddConfigPath("$HOME/.pigLatin")
 	}
 
