@@ -3,7 +3,9 @@ package service
 import (
 	"pigLatin/db"
 	"pigLatin/model"
+	"regexp"
 	"strings"
+	"unicode"
 )
 
 type PiglatinService struct {
@@ -16,61 +18,60 @@ func NewPiglatinService(repository *db.PiglatinRepo) *PiglatinService {
 	}
 }
 
+/*
+	takes word or group of words.
+
+	if group of words is supplied explode the string via white spaces,
+	after exploding it checks if it contains special characters.
+
+	words with special characters are not translated and automatically concatenated
+	to the output string.
+
+	check for panctuations, if a word contains multiple punctuations, collect word to
+	translate till the next punctuation is raised.
+
+	returns a struct contains the original text and translated text
+
+*/
+
 //Format text translates given text to a Piglatin translated format.
 func (p *PiglatinService) FormatText(originalText string) (model.TranslationResult, error) {
 
 	var (
-		vowelMap = map[string]bool{
-			"a": true,
-			"e": true,
-			"i": true,
-			"o": true,
-			"u": true,
-		}
-		transText []string
-		altText   []string
-		initVowel = false
+		punctuations = "!?.,-"
+		transText    []string
 	)
 
-	for wordCounter, word := range strings.Split(originalText, " ") {
+	for _, word := range strings.Split(originalText, " ") {
 
-		textArr := strings.Split(word, "")
-		initVowel = false
-		transText = append(transText, word)
-		altText = append(altText, word)
+		toTranslate := ""
+		if ok, _ := hasSpecialChar(word); !ok {
+			for key, val := range word {
 
-		for key, char := range textArr {
-
-			if _, ok := vowelMap[char]; ok && !initVowel {
-
-				transText[wordCounter] = arrangeResult(key, len(textArr), textArr)
-				altText[wordCounter] = arrangeResult(key, len(textArr), textArr)
-				if _, ok := vowelMap[textArr[0]]; !ok || len(textArr) == 1 {
-					break
+				if !strings.Contains(punctuations, string(val)) {
+					toTranslate += string(val)
+				} else {
+					if toTranslate != "" {
+						transText = append(transText, translate(toTranslate))
+					}
+					transText = append(transText, string(val))
+					toTranslate = ""
 				}
 
-				initVowel = true
+				if key == len(word)-1 && !strings.Contains(punctuations, string(val)) {
+					transText = append(transText, translate(toTranslate))
+				}
+
 			}
-
-			if _, ok := vowelMap[char]; !ok && initVowel && key < len(textArr)-1 {
-
-				if len(textArr)-2 == key {
-					break
-				}
-
-				if _, ok := vowelMap[textArr[key+1]]; ok {
-					altText[wordCounter] = arrangeResult(key+1, len(textArr), textArr)
-					break
-				}
-			}
-
+		} else {
+			transText = append(transText, word)
 		}
+
 	}
 
 	translationResult := model.TranslationResult{
 		OriginalText:   originalText,
 		TranslatedText: strings.Join(transText, " "),
-		AltTranslation: strings.Join(altText, " "),
 	}
 
 	err := p.repository.NewText(&translationResult)
@@ -82,13 +83,54 @@ func (p *PiglatinService) FormatText(originalText string) (model.TranslationResu
 	return translationResult, nil
 }
 
-func arrangeResult(vowelKey, textLength int, textSlice []string) string {
-	const suffix = "@ay"
+/*
+	check if initial character of the word string is vowel.
+	if the character is vowel concatenate word with vowel suffix
+	otherwise get get the index of the char before the next vowel.
 
-	if textLength > 1 {
-		newTextArr := append(textSlice[vowelKey:textLength], textSlice[0:vowelKey]...)
-		return strings.Replace(suffix, "@", strings.Join(newTextArr, ""), -1)
+	If the inital char of the word to be translated is capital, convert
+	output to capitalized.
+
+*/
+func translate(word string) (returnSTR string) {
+
+	var (
+		vowel       = "aeiou"
+		suffix      = "ay"
+		vowelSuffix = "way"
+		counter     = 0
+		wordRune    = []rune(word)
+		first       = word[0:1]
+	)
+
+	if strings.Contains(vowel, strings.ToLower(first)) {
+		returnSTR = word + vowelSuffix
+	} else {
+
+		for !strings.Contains(vowel, string(word[counter])) {
+			counter++
+			if counter > len(word)-1 {
+				counter = 0
+				break
+			}
+		}
+
+		returnSTR = word[counter:] + word[0:counter] + suffix
 	}
 
-	return strings.Replace(suffix, "@", textSlice[0], -1)
+	if unicode.IsUpper(rune(wordRune[0])) {
+		return strings.Title(returnSTR)
+	}
+
+	return returnSTR
+}
+
+/*
+	check if the word supplied contains special character
+	return true if the condition is satisfied else false.
+
+*/
+
+func hasSpecialChar(word string) (bool, error) {
+	return regexp.MatchString(`[^a-zA-Z'!?,. -]`, word)
 }
