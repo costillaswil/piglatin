@@ -17,7 +17,7 @@ func NewPiglatinService(repository *db.PiglatinRepo) *PiglatinService {
 }
 
 //Format text translates given text to a Piglatin translated format.
-func (p *PiglatinService) FormatText(originalText string) (map[string]interface{}, error) {
+func (p *PiglatinService) FormatText(originalText string) (model.TranslationResult, error) {
 
 	var (
 		vowelMap = map[string]bool{
@@ -27,55 +27,68 @@ func (p *PiglatinService) FormatText(originalText string) (map[string]interface{
 			"o": true,
 			"u": true,
 		}
-		transText = ""
-		altText   = ""
+		transText []string
+		altText   []string
 		initVowel = false
 	)
 
-	textArr := strings.Split(originalText, "")
+	for wordCounter, word := range strings.Split(originalText, " ") {
 
-	for key, val := range textArr {
+		textArr := strings.Split(word, "")
+		initVowel = false
+		transText = append(transText, word)
+		altText = append(altText, word)
 
-		if _, ok := vowelMap[val]; ok && !initVowel {
+		for key, char := range textArr {
 
-			transText = arrangeResult(key, len(textArr), textArr)
+			if _, ok := vowelMap[char]; ok && !initVowel {
 
-			if _, ok := vowelMap[textArr[0]]; !ok {
-				break
+				transText[wordCounter] = arrangeResult(key, len(textArr), textArr)
+				altText[wordCounter] = arrangeResult(key, len(textArr), textArr)
+				if _, ok := vowelMap[textArr[0]]; !ok || len(textArr) == 1 {
+					break
+				}
+
+				initVowel = true
 			}
 
-			initVowel = true
-		}
+			if _, ok := vowelMap[char]; !ok && initVowel && key < len(textArr)-1 {
 
-		if _, ok := vowelMap[val]; !ok && initVowel && key < len(textArr)-1 {
-			if _, ok := vowelMap[textArr[key+1]]; ok {
-				altText = arrangeResult(key+1, len(textArr), textArr)
-				break
+				if len(textArr)-2 == key {
+					break
+				}
+
+				if _, ok := vowelMap[textArr[key+1]]; ok {
+					altText[wordCounter] = arrangeResult(key+1, len(textArr), textArr)
+					break
+				}
 			}
+
 		}
 	}
 
 	translationResult := model.TranslationResult{
 		OriginalText:   originalText,
-		TranslatedText: transText,
-		AltTranslation: altText,
+		TranslatedText: strings.Join(transText, " "),
+		AltTranslation: strings.Join(altText, " "),
 	}
 
 	err := p.repository.NewText(&translationResult)
 
 	if err != nil {
-		return map[string]interface{}{}, err
+		return translationResult, err
 	}
 
-	return map[string]interface{}{
-		"original_text":   originalText,
-		"translated_text": transText,
-		"alt_translation": altText,
-	}, nil
+	return translationResult, nil
 }
 
 func arrangeResult(vowelKey, textLength int, textSlice []string) string {
-	const suffix = "ay"
-	newTextArr := append(textSlice[vowelKey:textLength], textSlice[0:vowelKey]...)
-	return strings.Join(newTextArr, "") + suffix
+	const suffix = "@ay"
+
+	if textLength > 1 {
+		newTextArr := append(textSlice[vowelKey:textLength], textSlice[0:vowelKey]...)
+		return strings.Replace(suffix, "@", strings.Join(newTextArr, ""), -1)
+	}
+
+	return strings.Replace(suffix, "@", textSlice[0], -1)
 }
